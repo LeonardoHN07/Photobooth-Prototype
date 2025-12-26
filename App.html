@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>📸 Photo Booth</title>
+
+<style>
+  body { font-family: sans-serif; text-align:center; padding:20px; }
+
+  /* ------------------- SCREENS ------------------- */
+  .screen { display:none; }
+  .active { display:block; }
+
+  /* Welcome */
+  #welcome h1 { font-size:40px; margin-bottom:20px; }
+  #welcome button { padding:20px 30px; font-size:24px; border-radius:12px; }
+
+  /* Layout menu */
+  #layoutMenu h2 { font-size:32px; }
+  .layout-option {
+    padding:20px;
+    margin:10px;
+    font-size:22px;
+    width:80%;
+    border-radius:12px;
+  }
+
+  /* Camera & buttons */
+  video { width:100%; max-width:400px; border-radius:10px; }
+  button { padding:14px 20px; font-size:18px; margin:10px; border-radius:10px; }
+
+  #countdown { font-size:50px; font-weight:bold; margin:20px; }
+
+  /* ------------------- OUTPUT LAYOUTS ------------------- */
+  #output { display:none; margin:20px auto; }
+
+  /* Vertical strip (2x6 look) */
+  .vertical-strip { width:300px; background:white; padding:10px; }
+  .vertical-strip img { width:100%; margin-bottom:5px; border:3px solid white; }
+
+  /* Box (2x2 grid postcard) */
+  .box-grid { width:330px; background:white; padding:10px; display:flex; flex-direction:column; gap:10px; }
+  .box-row { display:flex; gap:10px; }
+  .box-grid img { width:155px; height:155px; object-fit:cover; border:3px solid white; flex-shrink:0; }
+
+  /* Single photo */
+  .single { width:600px; background:white; padding:10px; }
+  .single img { width:100%; border:3px solid white; }
+
+  /* ------------------- PRINT ONLY WHAT MATTERS ------------------- */
+  @media print {
+    body * { visibility:hidden; }
+    #output, #output * { visibility:visible; }
+    #output { position:absolute; top:0; left:0; right:0; margin:auto; }
+    .box-grid { grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; }
+  }
+</style>
+</head>
+
+<body>
+
+<!-- WELCOME -->
+<div id="welcome" class="screen active">
+  <h1>📸 Welcome to the Photo Booth!</h1>
+  <button onclick="goTo('layoutMenu')">Tap to Start</button>
+</div>
+
+<!-- LAYOUT SELECTION -->
+<div id="layoutMenu" class="screen">
+  <h2>Select Layout</h2>
+  <button class="layout-option" onclick="selectLayout('vertical')">Vertical Strip (4 Photos)</button>
+  <button class="layout-option" onclick="selectLayout('box')">Box Grid (4 Photos)</button>
+  <button class="layout-option" onclick="selectLayout('single')">Single Photo</button>
+</div>
+
+<!-- CAMERA -->
+<div id="cameraScreen" class="screen">
+  <h2>📷 Capture Mode</h2>
+  <video id="preview" autoplay playsinline></video>
+  <div id="countdown"></div>
+  <button id="takeBtn">Take Photos</button>
+</div>
+
+<!-- OUTPUT -->
+<div id="output"></div>
+<button id="printBtn" class="screen" onclick="window.print()">Print</button>
+<button id="discardBtn" class="screen" onclick="resetApp()">Discard</button>
+
+<canvas id="canvas" style="display:none;"></canvas>
+
+<script>
+/* ------------------- STATE ------------------- */
+let layout = null;
+let photoLimit = 4;
+let photos = [];
+
+/* ------------------- SCREEN NAV ------------------- */
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ------------------- LAYOUT SELECT ------------------- */
+function selectLayout(l) {
+  layout = l;
+  photoLimit = (l === 'single') ? 1 : 4;
+  goTo('cameraScreen');
+  startCamera();
+}
+
+/* ------------------- CAMERA ------------------- */
+const video = document.getElementById('preview');
+const canvas = document.getElementById('canvas');
+const countdownEl = document.getElementById('countdown');
+
+async function startCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user" }});
+  video.srcObject = stream;
+}
+
+/* ------------------- CAPTURE ------------------- */
+function countdown(seconds) {
+  return new Promise(resolve => {
+    let t = seconds;
+    countdownEl.textContent = t;
+    const timer = setInterval(() => {
+      t--;
+      countdownEl.textContent = t>0?t:"📸";
+      if(t<0){ clearInterval(timer); countdownEl.textContent=""; resolve(); }
+    },1000);
+  });
+}
+
+function snapPhoto(){
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video,0,0);
+  return canvas.toDataURL("image/jpeg");
+}
+
+async function takePhotos(){
+  photos = [];
+  for(let i=0;i<photoLimit;i++){
+    await countdown(3);
+    photos.push(snapPhoto());
+  }
+  showOutput();
+}
+
+document.getElementById('takeBtn').onclick = takePhotos;
+
+/* ------------------- LAYOUT OUTPUT ------------------- */
+function showOutput(){
+  const out = document.getElementById('output');
+  out.innerHTML = "";
+  out.style.display="block";
+  printBtn.style.display="inline-block";
+  discardBtn.style.display="inline-block";
+
+  if(layout === 'vertical'){
+    out.className = "vertical-strip";
+    photos.forEach(src => out.innerHTML += `<img src="${src}">`);
+  }
+  if(layout === 'box'){
+    out.className = "box-grid";
+    for(let i=0;i<photos.length;i+=2){
+      const row = document.createElement('div');
+      row.className = 'box-row';
+      const img1 = document.createElement('img');
+      img1.src = photos[i];
+      row.appendChild(img1);
+      if(i+1<photos.length){
+        const img2 = document.createElement('img');
+        img2.src = photos[i+1];
+        row.appendChild(img2);
+      }
+      out.appendChild(row);
+    }
+  }
+  if(layout === 'single'){
+    out.className = "single";
+    out.innerHTML = `<img src="${photos[0]}">`;
+  }
+
+  goTo('output');
+}
+
+/* ------------------- RESET ------------------- */
+function resetApp(){
+  location.reload();
+}
+</script>
+</body>
+</html>
+
+
